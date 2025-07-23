@@ -1,0 +1,14 @@
+# Web scraping and automation
+selenium
+
+# HTTP client for downloading documents
+httpx
+
+# HTML parsing
+lxml
+
+# Retry logic and error handling
+tenacity
+
+# Progress bars
+tqdm

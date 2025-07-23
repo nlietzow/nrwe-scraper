@@ -1,3 +1,11 @@
+"""
+Web scraping module for the NRWE court database.
+
+This module uses Selenium WebDriver to scrape legal case information from the
+North Rhine-Westphalia court database. It handles date range selection,
+form submission, pagination, and result extraction.
+"""
+
 import json
 import logging
 import time
@@ -14,24 +22,36 @@ from selenium.webdriver.support.wait import WebDriverWait
 from tenacity import retry, stop_after_attempt, wait_exponential
 from tqdm.auto import tqdm
 
-from src.utils import (
-    DateTimeEncoder,
+from utils import (
     EXECUTABLE_PATH,
+    DateTimeEncoder,
+    ResultItem,
     format_date,
     get_end_of_month,
     get_output_file,
-    ResultItem,
 )
 
+# Target website URL for NRWE court database
 BASE_URL = "https://www.justiz.nrw/BS/nrwe2/index.php"
+# Maximum time to wait for web elements to appear (seconds)
 WEBDRIVER_WAIT_TIMEOUT = 60
+# Delay between page navigation to avoid overwhelming the server
 SLEEP_TIME_PAGINATION = 1
 
 
 def run_scraping(start_date: datetime, end_date: datetime):
-    """
-    Run the main scraping process for the given date range from start_date to end_date.
-    The scraper iterates month by month, retrieving data from the specified court website.
+    """Run the main scraping process for the specified date range.
+
+    Iterates month by month through the date range, scraping court case data
+    from the NRWE database. Skips months that have already been processed
+    (output file exists) and handles errors gracefully.
+
+    Args:
+        start_date: Beginning of the date range to scrape
+        end_date: End of the date range to scrape
+
+    The function creates JSON Lines files for each month containing
+    ResultItem objects with case information and links.
     """
     scrape_from = start_date
     with tqdm(desc="Scraping", unit="month") as pbar:
@@ -65,9 +85,23 @@ def run_scraping(start_date: datetime, end_date: datetime):
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=60), reraise=True)
 def _scrape_range(start_date: datetime, end_date: datetime) -> list[ResultItem]:
-    """
-    Scrape all results for the specified date range from the target website.
-    Uses a Selenium WebDriver to interact with the page and retrieve link results.
+    """Scrape all results for a specific date range using Selenium WebDriver.
+
+    Automates the web scraping process by:
+    1. Opening the NRWE court database website
+    2. Filling out search form with date range and court criteria
+    3. Iterating through all result pages to collect case links
+    4. Extracting href attributes and link text for each result
+
+    Args:
+        start_date: Start of the date range to search
+        end_date: End of the date range to search
+
+    Returns:
+        List of ResultItem objects containing case information and links
+
+    The function uses retry logic to handle temporary network issues
+    and ensures the WebDriver is properly closed after use.
     """
     driver = _init_driver()
     wait = WebDriverWait(driver, WEBDRIVER_WAIT_TIMEOUT)
@@ -153,14 +187,21 @@ def _scrape_range(start_date: datetime, end_date: datetime) -> list[ResultItem]:
 
 
 def _init_driver(headless=True):
-    """
-    Initialize and return a Selenium WebDriver for Edge using the specified executable path.
+    """Initialize and configure a Selenium Edge WebDriver.
+
+    Creates a WebDriver instance with appropriate options for web scraping.
+    In headless mode, the browser runs without a visible window which is
+    more efficient for automated scraping tasks.
 
     Args:
-        headless (bool): If True, starts the browser in headless mode. Defaults to False.
+        headless (bool): If True, runs browser in headless mode without GUI.
+                        Defaults to True for efficiency.
 
     Returns:
-        WebDriver: Configured Edge WebDriver instance.
+        WebDriver: Configured Edge WebDriver instance ready for automation.
+
+    The function uses the executable path from utils and configures
+    additional options for stability in headless environments.
     """
     options = Options()  # Use Options() for Edge options
     if headless:

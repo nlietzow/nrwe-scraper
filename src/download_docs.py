@@ -1,14 +1,24 @@
+"""
+Document download module for the NRWE scraper.
+
+This module provides functionality to download HTML documents concurrently
+from URLs extracted from JSON files. It includes URL validation, retry logic,
+and progress tracking.
+"""
+
 import json
 import logging
-from asyncio import gather, Semaphore, timeout
+from asyncio import Semaphore, gather, timeout
 
-from httpx import AsyncClient, InvalidURL, Response, URL
+from httpx import URL, AsyncClient, InvalidURL, Response
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 from tqdm.auto import tqdm
 
 from utils import DOCS_DIR, HEADERS, IDS_DIR
 
+# Maximum number of concurrent downloads
 CONCURRENCY = 4
+# Timeout for individual HTTP requests in seconds
 TIMEOUT = 60
 
 
@@ -17,6 +27,12 @@ async def download_docs(concurrency=CONCURRENCY):
 
     Reads JSON lines from files in IDS_DIR, extracts the 'href' field to form a URL,
     and downloads the HTML documents using an async HTTP client.
+
+    Args:
+        concurrency: Maximum number of concurrent downloads (default: CONCURRENCY)
+
+    The function processes all JSONL files matching the pattern '*ids_from_*_to_*.jsonl'
+    in the IDS_DIR directory. Each line should contain a JSON object with an 'href' field.
     """
     with tqdm(desc="Downloading documents") as pbar:
         async with AsyncClient(headers=HEADERS) as client:
@@ -44,13 +60,17 @@ async def download_docs(concurrency=CONCURRENCY):
 def _parse_url(href: str) -> URL | None:
     """Parse and validate a URL extracted from the href field.
 
-    Returns a `URL` object if the URL is valid:
+    Args:
+        href: URL string to parse and validate
+
+    Returns:
+        URL object if valid, None otherwise
+
+    A valid URL must meet the following criteria:
       - Must be absolute
       - Must use HTTP or HTTPS
       - Must end with .html
       - Must not contain query parameters or fragments
-
-    Otherwise, returns None.
     """
     if not href:
         return None
@@ -93,6 +113,14 @@ async def _download(url: URL, client: AsyncClient, sem: Semaphore):
 
     Uses a semaphore to limit concurrency and retries on failure
     with exponential backoff. If already downloaded, skip.
+
+    Args:
+        url: The URL to download from
+        client: HTTP client for making requests
+        sem: Semaphore to limit concurrent downloads
+
+    The function creates the necessary directory structure and saves
+    the HTML content to a file based on the URL path.
     """
     output_file = DOCS_DIR / url.path.lstrip("/")
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -121,7 +149,14 @@ async def _download(url: URL, client: AsyncClient, sem: Semaphore):
 
 
 def _is_html(response: Response) -> bool:
-    """Check if the response content-type indicates HTML."""
+    """Check if the response content-type indicates HTML.
+
+    Args:
+        response: HTTP response object to check
+
+    Returns:
+        True if content-type starts with 'text/html', False otherwise
+    """
     return (
         response.headers.get("content-type", "").lower().strip().startswith("text/html")
     )
